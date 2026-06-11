@@ -27,11 +27,15 @@ GARMIN_PASSWORD = _require("GARMIN_PASSWORD")
 # garth トークンキャッシュ
 TOKEN_STORE = os.getenv("TOKEN_STORE") or "./.garminconnect"
 
-# --- 任意: Claude API（自動分析モードでのみ使用）---
+# --- 任意: Claude API（有料・自動分析モードでのみ使用）---
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 if ANTHROPIC_API_KEY:
     os.environ.setdefault("ANTHROPIC_API_KEY", ANTHROPIC_API_KEY)
 CLAUDE_MODEL = "claude-opus-4-8"
+
+# --- 無料・全自動モード: Claude Code CLI のパス ---
+# claude -p（非対話）をサブスクで呼ぶ。API従量課金は発生しない。
+CLAUDE_CMD = os.getenv("CLAUDE_CMD") or r"C:\Users\mckou\AppData\Roaming\npm\claude.cmd"
 
 # --- 任意: Gmail（メール送信を使う場合のみ）---
 GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS")

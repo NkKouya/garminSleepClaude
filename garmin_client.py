@@ -51,9 +51,12 @@ def _sec_to_hm(seconds: Optional[int]) -> Optional[str]:
 
 
 def _epoch_ms_to_local(ms: Optional[int]) -> Optional[str]:
+    # Garmin の *Local タイムスタンプは「ローカル時刻をUTC扱いでエンコード」した
+    # epoch ミリ秒。fromtimestamp だとローカルオフセットが二重適用されるため
+    # utcfromtimestamp で素の時刻を取り出す。
     if not ms:
         return None
-    return dt.datetime.fromtimestamp(int(ms) / 1000).strftime("%H:%M")
+    return dt.datetime.utcfromtimestamp(int(ms) / 1000).strftime("%H:%M")
 
 
 def get_sleep_summary(date: Optional[str] = None) -> Optional[dict]:

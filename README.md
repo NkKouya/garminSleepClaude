@@ -2,12 +2,21 @@
 
 Garmin Connect から前夜の睡眠データを取得し、Claude で分析・評価するシステム。
 
-2つのモードがある:
-- **無料・手動モード（おすすめ・既定）**: APIを使わず、貼り付け用プロンプトを生成。
-  Claude Desktop（無料枠）に貼り付けて分析する。
-- **有料・自動モード（将来用）**: Claude API で自動分析し、Gmail で自動送信。
+3つのモードがある:
+- **無料・全自動モード（おすすめ）**: `claude -p`（Claude Code CLI）をサブスクで使い、
+  取得→分析→ファイル保存→Gmail送信まで全自動。API従量課金なし。
+- **無料・手動モード**: APIを使わず貼り付け用プロンプトを生成し、Claude Desktop に貼る。
+- **有料・自動モード（将来用）**: Claude API で自動分析し、Gmail で送信。
 
 ## 仕組み
+
+### 無料・全自動モード（おすすめ）
+```
+タスクスケジューラ(毎朝8:00) → run_auto_free.bat → auto_free.py
+  garmin_client.py     : Garminから睡眠データ取得
+  analyzer.analyze_free: claude -p で分析（サブスク利用＝API課金なし）
+  → output/sleep_report_*.txt 保存 ＆ emailer.py(Gmail送信)
+```
 
 ### 無料・手動モード
 ```
@@ -47,6 +56,34 @@ python manual_report.py
 ```
 初回は Garmin の2段階認証コード入力を求められる場合があります。
 成功すると `.garminconnect/` にトークンが保存され、以降は自動ログインされます。
+
+## 使い方（無料・全自動モード）★おすすめ
+
+`claude -p`（Claude Code CLI）をサブスクリプションで使うため、API従量課金は発生しません。
+
+### 前提
+- このPCで Claude Code にログイン済みであること（`claude` が使える状態）
+- `.env` に **Gmail送信設定**を記入すること（このモードはメール送信するため）:
+  - `GMAIL_ADDRESS` = 送信元/送信先の Gmail アドレス
+  - `GMAIL_APP_PASSWORD` = Gmail の**アプリパスワード**（16文字。通常のPW不可。
+    Google アカウント → セキュリティ → 2段階認証を有効化 → 「アプリパスワード」で発行）
+
+### 手動実行
+```powershell
+python auto_free.py
+```
+Garmin取得 → Claude分析 → `output/sleep_report_YYYY-MM-DD.txt` 保存 →
+`MAIL_TO`（既定は `GMAIL_ADDRESS`）宛にメール送信。
+
+### 毎朝の全自動化（タスクスケジューラ）
+1. 「タスク スケジューラ」→「基本タスクの作成」
+2. 名前: `Garmin Sleep Auto`
+3. トリガー: 「毎日」→ 開始時刻 `8:00`
+4. 操作: 「プログラムの開始」→ `C:\Users\mckou\garminSleep\run_auto_free.bat`
+5. 「ユーザーがログオンしているときのみ実行」を選ぶ
+   （Claude Code のログイン情報にアクセスするため）
+
+これで毎朝、PCを起動していれば睡眠レポートが自動でメールに届きます。
 
 ## 使い方（無料・手動モード）
 

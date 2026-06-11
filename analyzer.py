@@ -1,5 +1,13 @@
-"""Claude API で睡眠データを分析・評価し、日本語のレポート文を生成する。"""
+"""睡眠データを分析・評価し、日本語のレポート文を生成する。
+
+2系統の分析:
+- analyze_free(): Claude Code CLI(`claude -p`)を使う。サブスク利用=追加費用なし。
+- analyze():      Claude API を使う（有料・従量課金）。
+"""
 from __future__ import annotations
+
+import os
+import subprocess
 
 import anthropic
 
@@ -54,6 +62,41 @@ def build_prompt(summary: dict) -> str:
         f"以下は前夜のGarmin睡眠指標です。これを分析・評価してください。\n\n"
         f"{metrics_text}"
     )
+
+
+def _run_claude_cli(prompt: str) -> str:
+    """Claude Code CLI(`claude -p`)にプロンプトを渡し、応答テキストを返す。
+
+    プロンプトは stdin 経由で渡す（複数行・特殊文字の安全性、シェル注入回避）。
+    サブスクリプションで動作するため API 従量課金は発生しない。
+    """
+    comspec = os.environ.get("COMSPEC", "cmd.exe")
+    proc = subprocess.run(
+        [comspec, "/c", config.CLAUDE_CMD, "-p"],
+        input=prompt,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=300,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"claude CLI がエラー終了しました (code={proc.returncode}):\n"
+            f"{proc.stderr.strip()}"
+        )
+    output = (proc.stdout or "").strip()
+    if not output:
+        raise RuntimeError(
+            "claude CLI から空の応答が返りました。"
+            f"\nstderr: {proc.stderr.strip()}"
+        )
+    return output
+
+
+def analyze_free(summary: dict) -> str:
+    """Claude Code CLI で睡眠を分析し、評価レポート文（日本語）を返す（無料・サブスク）。"""
+    prompt = build_prompt(summary)
+    return _run_claude_cli(prompt)
 
 
 def analyze(summary: dict) -> str:

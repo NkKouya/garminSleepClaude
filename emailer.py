@@ -17,7 +17,8 @@ def send_report(subject: str, body: str) -> None:
     msg["To"] = config.MAIL_TO
     msg["Date"] = formatdate(localtime=True)
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+    # local_hostname を固定（PCのホスト名に非ASCII文字があるとEHLOで失敗するため）
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, local_hostname="localhost") as server:
         server.login(config.GMAIL_ADDRESS, config.GMAIL_APP_PASSWORD)
         server.send_message(msg)
 
