@@ -1,0 +1,6 @@
+.env
+.garminconnect/
+logs/
+output/
+__pycache__/
+*.pyc
