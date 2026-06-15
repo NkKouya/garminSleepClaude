@@ -59,6 +59,23 @@ def _epoch_ms_to_local(ms: Optional[int]) -> Optional[str]:
     return dt.datetime.utcfromtimestamp(int(ms) / 1000).strftime("%H:%M")
 
 
+def get_client() -> Garmin:
+    """ログイン済み Garmin クライアントを返す（複数日取得で使い回す用）。
+
+    バックフィル等で多数の日付を取得する際、毎回ログインせず
+    同一クライアントを使い回すための入口。
+    """
+    return _login()
+
+
+def get_sleep_raw(date: Optional[str] = None) -> Optional[dict]:
+    """指定日（既定は今日）の睡眠データを garminconnect の生レスポンスのまま返す。"""
+    if date is None:
+        date = dt.date.today().isoformat()
+    garmin = _login()
+    return garmin.get_sleep_data(date)
+
+
 def get_sleep_summary(date: Optional[str] = None) -> Optional[dict]:
     """指定日（既定は今日）の睡眠サマリを辞書で返す。データ無しは None。
 

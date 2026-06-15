@@ -2,5 +2,7 @@
 .garminconnect/
 logs/
 output/
+rawdata/
+*.db
 __pycache__/
 *.pyc
