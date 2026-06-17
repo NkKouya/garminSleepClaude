@@ -6,3 +6,4 @@ rawdata/
 *.db
 __pycache__/
 *.pyc
+*.ipynb

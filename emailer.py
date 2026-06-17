@@ -2,16 +2,26 @@
 from __future__ import annotations
 
 import smtplib
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate
 
 import config
 
 
-def send_report(subject: str, body: str) -> None:
-    """件名・本文（プレーンテキスト）でメールを送信する。"""
+def send_report(subject: str, body: str, html_body: str | None = None) -> None:
+    """件名・本文でメールを送信する。
+
+    html_body を渡すと multipart/alternative（plain + HTML）で送る。
+    plain はHTML非対応クライアント向けのフォールバックになる。
+    """
     config.require_gmail()
-    msg = MIMEText(body, "plain", "utf-8")
+    if html_body is None:
+        msg = MIMEText(body, "plain", "utf-8")
+    else:
+        msg = MIMEMultipart("alternative")
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+        msg.attach(MIMEText(html_body, "html", "utf-8"))
     msg["Subject"] = subject
     msg["From"] = config.GMAIL_ADDRESS
     msg["To"] = config.MAIL_TO

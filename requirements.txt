@@ -1,3 +1,4 @@
 garminconnect
 anthropic
 python-dotenv
+markdown
