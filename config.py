@@ -46,8 +46,8 @@ MAIL_TO = os.getenv("MAIL_TO") or GMAIL_ADDRESS
 def require_anthropic() -> None:
     if not ANTHROPIC_API_KEY:
         raise RuntimeError(
-            "ANTHROPIC_API_KEY が未設定です（自動分析モードに必要）。"
-            "無料で使う場合は手動モード manual_report.py を利用してください。"
+            "ANTHROPIC_API_KEY が未設定です（有料・自動分析モードに必要）。"
+            "無料で使う場合は detailed_report.py（無料・詳細モード）を利用してください。"
         )
 
 

@@ -1,8 +1,8 @@
 """睡眠データを分析・評価し、日本語のレポート文を生成する。
 
 2系統の分析:
-- analyze_free(): Claude Code CLI(`claude -p`)を使う。サブスク利用=追加費用なし。
-- analyze():      Claude API を使う（有料・従量課金）。
+- analyze_free_detailed(): Claude Code CLI(`claude -p`)で時系列を分析（無料・サブスク）。
+- analyze():               Claude API を使う（有料・従量課金）。
 """
 from __future__ import annotations
 
@@ -163,20 +163,6 @@ def format_metrics(summary: dict) -> str:
     return "\n".join(lines)
 
 
-def build_prompt(summary: dict) -> str:
-    """Claude Desktop にそのまま貼り付けられる分析プロンプトを返す（無料・手動モード）。
-
-    分析指示と睡眠指標を1つのテキストにまとめる。
-    """
-    metrics_text = format_metrics(summary)
-    return (
-        f"{_SYSTEM_PROMPT}\n\n"
-        f"対象日: {summary.get('date')}\n"
-        f"以下は前夜のGarmin睡眠指標です。これを分析・評価してください。\n\n"
-        f"{metrics_text}"
-    )
-
-
 def _run_claude_cli(prompt: str) -> str:
     """Claude Code CLI(`claude -p`)にプロンプトを渡し、応答テキストを返す。
 
@@ -204,12 +190,6 @@ def _run_claude_cli(prompt: str) -> str:
             f"\nstderr: {proc.stderr.strip()}"
         )
     return output
-
-
-def analyze_free(summary: dict) -> str:
-    """Claude Code CLI で睡眠を分析し、評価レポート文（日本語）を返す（無料・サブスク）。"""
-    prompt = build_prompt(summary)
-    return _run_claude_cli(prompt)
 
 
 def analyze(summary: dict) -> str:
