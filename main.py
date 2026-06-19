@@ -27,29 +27,25 @@ logging.basicConfig(
 log = logging.getLogger("garminSleep")
 
 
-def build_email_body(summary: dict, analysis: str) -> str:
-    """指標サマリ + Claude分析を結合したメール本文を作る。"""
-    from analyzer import format_metrics
-
-    return (
-        f"■ {summary.get('date')} の睡眠レポート\n\n"
-        f"【指標サマリ】\n{format_metrics(summary)}\n\n"
-        f"【分析・評価】\n{analysis}\n\n"
-        f"---\nGarmin Sleep Reporter による自動送信\n"
-    )
-
-
 def run() -> int:
+    import database
+    import build_database
     from emailer import send_report
-    from garmin_client import get_sleep_summary
-    from analyzer import analyze
+    from analyzer import analyze_detailed_api
+    from detailed_report import build_body, build_html_body
 
     today = dt.date.today().isoformat()
     log.info("睡眠レポート処理を開始: %s", today)
 
-    summary = get_sleep_summary(today)
+    conn = database.connect()
+    database.init_schema(conn)
 
-    if not summary:
+    # detailed_report と同じデータ経路: 当日を再取得してDBを最新化（無ければDB参照）
+    inter, _, _ = build_database.ingest_date(conn, today, use_cache=False)
+    if not inter:
+        inter = database.load_intermediate(conn, today)
+
+    if not inter:
         log.warning("睡眠データが未取得（未同期の可能性）。通知メールを送信します。")
         send_report(
             f"【睡眠レポート】{today} データ未取得",
@@ -59,16 +55,16 @@ def run() -> int:
         )
         return 0
 
-    log.info("睡眠データ取得OK (スコア=%s)。Claudeで分析します。",
-             summary.get("sleep_score"))
-    analysis = analyze(summary)
+    score = (inter.get("features") or {}).get("sleep_score")
+    log.info("睡眠データ取得OK (スコア=%s)。Claude API で分析します。", score)
+    analysis = analyze_detailed_api(inter)
 
-    score = summary.get("sleep_score")
     score_part = f"（スコア {score}）" if score is not None else ""
     subject = f"【睡眠レポート】{today}{score_part}"
-    body = build_email_body(summary, analysis)
+    body = build_body(inter, analysis)
+    html = build_html_body(inter, analysis)
 
-    send_report(subject, body)
+    send_report(subject, body, html_body=html)
     log.info("メール送信完了: %s", subject)
     return 0
 
