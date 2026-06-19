@@ -62,11 +62,14 @@ def golden90_deep_min(inter: dict) -> int | None:
     return deep_bins * BIN_MINUTES
 
 
-def build_weekly(inters: list[dict]) -> dict:
+def build_weekly(inters: list[dict], missing: list[str] | None = None) -> dict:
     """期間内の各夜 inter から週次集計 dict を作る。
 
     入力は日付昇順を想定（呼び出し側でソート）。features のネスト構造は
     database.flatten_features と同じキーで参照する。
+
+    missing: DB にデータが無い日付（不眠とみなす日）。夜別表に欠損行として
+    加えるが、平均・標準偏差は記録のある夜のみで算出する（0睡眠を捏造しない）。
     """
     nights = []
     for inter in inters:
@@ -108,10 +111,28 @@ def build_weekly(inters: list[dict]) -> dict:
         if any(v is not None for v in (n["deep_min"], n["light_min"], n["rem_min"]))
     ]
 
+    missing = missing or []
+    # 記録夜＋欠損日を日付順に並べた夜別表（欠損は不眠とみなす行）
+    night_rows = [
+        {
+            "date": n["date"],
+            "score": n["score"],
+            "bed": n["_bed"],
+            "wake": n["_wake"],
+            "deep_min": n["deep_min"],
+            "rem_min": n["rem_min"],
+            "golden90_deep_min": n["golden90_deep_min"],
+        }
+        for n in nights
+    ] + [{"date": d, "missing": True} for d in missing]
+    night_rows.sort(key=lambda r: r["date"] or "")
+    all_dates = [n["date"] for n in nights] + list(missing)
+
     weekly = {
-        "start_date": nights[0]["date"] if nights else None,
-        "end_date": nights[-1]["date"] if nights else None,
+        "start_date": min(all_dates) if all_dates else None,
+        "end_date": max(all_dates) if all_dates else None,
         "days": len(nights),
+        "missing_days": len(missing),
         "score": {
             "avg": _avg(scores),
             "min": min(scores) if scores else None,
@@ -141,17 +162,6 @@ def build_weekly(inters: list[dict]) -> dict:
         "stress_avg": _avg([n["_stress"] for n in nights]),
         "awakenings_avg": _avg([n["_awakenings"] for n in nights]),
         "golden90_deep_avg": _avg([n["golden90_deep_min"] for n in nights]),
-        "nights": [
-            {
-                "date": n["date"],
-                "score": n["score"],
-                "bed": n["_bed"],
-                "wake": n["_wake"],
-                "deep_min": n["deep_min"],
-                "rem_min": n["rem_min"],
-                "golden90_deep_min": n["golden90_deep_min"],
-            }
-            for n in nights
-        ],
+        "nights": night_rows,
     }
     return weekly

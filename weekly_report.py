@@ -100,9 +100,9 @@ def run(end_date: str, send_mail: bool) -> int:
         print(f"{start.isoformat()}〜{end.isoformat()} の睡眠データが見つかりませんでした。")
         return 0
     if missing:
-        print(f"データ無しの日（スキップ）: {', '.join(missing)}")
+        print(f"データ無しの日（不眠とみなす）: {', '.join(missing)}")
 
-    weekly = weekly_mod.build_weekly(inters)
+    weekly = weekly_mod.build_weekly(inters, missing=missing)
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
