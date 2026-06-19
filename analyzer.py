@@ -85,6 +85,45 @@ _DETAILED_SYSTEM_PROMPT = (
 )
 
 
+_WEEKLY_SYSTEM_PROMPT = (
+    "# 役割\n"
+    "あなたは睡眠科学に基づいて睡眠データを解析するアナリストです。"
+    "スタンフォード大学・西野精治氏が提唱する「黄金の90分」（入眠直後の最初の"
+    "ノンレム睡眠周期＝睡眠全体の質を決める最重要区間）の観点を中心に、"
+    "添付した直近1週間の睡眠データ（週次集計＋夜別指標）を解析してください。"
+    "単一の夜ではなく、1週間を通した『平均』『ばらつき（一貫性）』『傾向』を評価します。\n"
+    "\n"
+    "# 前提知識（この枠組みで評価すること）\n"
+    "- 「黄金の90分」＝入眠後の最初の睡眠周期。ここで深いノンレム睡眠（N3/徐波睡眠）が"
+    "まとまって出現できているかが鍵。本データの『黄金90分の深睡眠量』は、各夜の入眠後"
+    "90分以内に観測された深睡眠の分数（最大90分）。週平均が大きいほど、初回周期で"
+    "深く眠れている夜が多いことを示す。\n"
+    "- 就寝・起床時刻の『ばらつき（標準偏差）』は睡眠リズムの一貫性の指標。"
+    "ばらつきが大きいほど体内時計が乱れやすく、黄金の90分の再現性を下げやすい。\n"
+    "- 「何時に寝たか」自体より、入眠後最初の90分の質と、その週内での安定性を見る。\n"
+    "\n"
+    "# 解析手順\n"
+    "1. 週平均の主要指標（睡眠スコア・各睡眠段階・総睡眠時間・黄金90分の深睡眠量・HRV・"
+    "安静時心拍・SpO2・呼吸・ボディバッテリー回復・中途覚醒）を一般的な目安と比較する。\n"
+    "2. 夜別の値から、週内の傾向（改善/悪化/横ばい）と、特に良かった夜・崩れた夜を特定する。\n"
+    "3. 就寝・起床のばらつきから睡眠リズムの一貫性を評価する。\n"
+    "4. 黄金の90分が週を通して安定して取れているか/不十分かを、理由とともに判定する。\n"
+    "\n"
+    "# 出力フォーマット（結論を先に）\n"
+    "1. 週の結論: 今週の睡眠の質を一言で（例: 安定して良好／ばらつき大／週後半に悪化）＋一文の根拠\n"
+    "2. 週間黄金90分スコア: 0〜100の概算スコアと内訳（深睡眠量の週平均・一貫性・週内トレンド）\n"
+    "3. 週平均の主要指標一覧（数値と一般的な目安との比較、夜別のレンジにも触れる）\n"
+    "4. 週内で観察された問題点・懸念（追従や過度な賞賛はせず率直に。反復する課題を重視）\n"
+    "5. 来週への具体的アクション（深部体温・入浴タイミング・就床リズムの一貫性など、"
+    "黄金の90分の質と再現性を上げる介入に絞る）\n"
+    "\n"
+    "# 注意\n"
+    "- 推測で断定しない。データから読み取れない箇所は明示する。\n"
+    "- 医療的診断はしない。気になる所見があれば受診を勧める程度に留める。\n"
+    "- これは一般的な睡眠科学の枠組みに基づく解析であり、医療行為ではない。\n"
+)
+
+
 def _fmt(value) -> str:
     """None を空欄に、数値は簡潔に整形する。"""
     if value is None:
@@ -147,6 +186,56 @@ def analyze_free_detailed(inter: dict) -> str:
     prompt = (
         f"{_DETAILED_SYSTEM_PROMPT}\n\n"
         f"以下は前夜のGarmin睡眠データ（時系列を5分粒度に圧縮したもの）です。"
+        f"これを分析・評価してください。\n\n"
+        f"{body}"
+    )
+    return _run_claude_cli(prompt)
+
+
+def format_weekly(weekly: dict) -> str:
+    """週次集計（週平均＋夜別の黄金90分指標）をLLM向けの簡潔テキストに整形する。"""
+    sc = weekly.get("score") or {}
+    st = weekly.get("stages") or {}
+    bt = weekly.get("bed_time") or {}
+    wt = weekly.get("wake_time") or {}
+
+    lines = [
+        f"対象期間: {weekly.get('start_date')} 〜 {weekly.get('end_date')}"
+        f"（データのある夜: {_fmt(weekly.get('days'))} 日）",
+        "",
+        "【週次集計（平均）】",
+        f"- 睡眠スコア: 平均 {_fmt(sc.get('avg'))} "
+        f"(範囲 {_fmt(sc.get('min'))}〜{_fmt(sc.get('max'))}, σ {_fmt(sc.get('std'))})",
+        f"- ステージ(分): 深い {_fmt(st.get('deep_min'))} / 浅い {_fmt(st.get('light_min'))} "
+        f"/ REM {_fmt(st.get('rem_min'))} / 覚醒 {_fmt(st.get('awake_min'))}  "
+        f"総睡眠 {_fmt(st.get('total_sleep_min'))}",
+        f"- 黄金90分の深睡眠量: 平均 {_fmt(weekly.get('golden90_deep_avg'))} 分 "
+        f"(入眠後90分以内の深睡眠, 最大90)",
+        f"- 就寝: 平均 {_fmt(bt.get('avg'))} (ばらつき σ{_fmt(bt.get('std_min'))}分)  "
+        f"起床: 平均 {_fmt(wt.get('avg'))} (σ{_fmt(wt.get('std_min'))}分)",
+        f"- HRV平均 {_fmt(weekly.get('hrv_avg'))}ms / 安静時HR {_fmt(weekly.get('hr_resting_avg'))} "
+        f"/ SpO2 {_fmt(weekly.get('spo2_avg'))}% / 呼吸 {_fmt(weekly.get('resp_avg'))}回/分",
+        f"- 回復(BB変化) 平均 +{_fmt(weekly.get('bb_change_avg'))} / 睡眠中ストレス平均 "
+        f"{_fmt(weekly.get('stress_avg'))} / 中途覚醒 平均 {_fmt(weekly.get('awakenings_avg'))} 回",
+        "",
+        "【夜別 × 黄金90分】",
+        "日付         score 深  REM 黄金90分の深睡眠(分)",
+    ]
+    for n in weekly.get("nights") or []:
+        lines.append(
+            f"{_fmt(n.get('date')):10} {_fmt(n.get('score')):5} "
+            f"{_fmt(n.get('deep_min')):3} {_fmt(n.get('rem_min')):3} "
+            f"{_fmt(n.get('golden90_deep_min')):>4}"
+        )
+    return "\n".join(lines)
+
+
+def analyze_free_weekly(weekly: dict) -> str:
+    """週次集計を Claude Code CLI で分析し、週間レポート文（日本語）を返す。"""
+    body = format_weekly(weekly)
+    prompt = (
+        f"{_WEEKLY_SYSTEM_PROMPT}\n\n"
+        f"以下は直近1週間のGarmin睡眠データを集計したものです（週平均と夜別の指標）。"
         f"これを分析・評価してください。\n\n"
         f"{body}"
     )
