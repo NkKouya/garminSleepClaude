@@ -53,6 +53,38 @@ def _save_raw(date: str, raw: dict) -> None:
         json.dump(raw, f, ensure_ascii=False, indent=2)
 
 
+def ingest_date(conn, date: str, *, client=None, use_cache: bool = True,
+                sleep: float = 0.0):
+    """指定日1日分を取得→中間表現→DB upsert する。
+
+    raw は rawdata キャッシュ優先（use_cache=False で無視して必ずAPI取得）。
+    戻り値は (inter, source, client)。
+    - inter:  中間表現 dict（データ無し/未同期は None）
+    - source: 'cache' | 'api' | None（取得元）
+    - client: 遅延ログインで生成/再利用された Garmin クライアント（複数日で使い回す用）
+
+    DB への upsert は inter が得られた場合のみ行う。
+    """
+    raw = _load_cached_raw(date) if use_cache else None
+    source = "cache" if raw is not None else None
+    if raw is None:
+        if client is None:
+            from garmin_client import get_client
+            print("Garmin にログインします...")
+            client = get_client()
+        raw = client.get_sleep_data(date)
+        source = "api"
+        if raw:
+            _save_raw(date, raw)
+        if sleep:
+            time.sleep(sleep)
+
+    inter = intermediate.build_intermediate(raw) if raw else None
+    if inter:
+        database.upsert_night(conn, inter)
+    return inter, source, client
+
+
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description="睡眠履歴を中間表現でDB化する")
     p.add_argument("--since", help="開始日 YYYY-MM-DD（この日で停止）")
@@ -101,39 +133,27 @@ def run(args) -> int:
             date -= dt.timedelta(days=1)
             continue
 
-        # 2) raw を取得（キャッシュ優先、無ければAPI）
-        raw = _load_cached_raw(ds)
-        from_cache = raw is not None
-        if raw is None:
-            if client is None:
-                from garmin_client import get_client
-                print("Garmin にログインします...")
-                client = get_client()
-            try:
-                raw = client.get_sleep_data(ds)
-            except Exception as e:
-                print(f"  {ds}: 取得エラー（スキップ）: {e}")
-                date -= dt.timedelta(days=1)
-                time.sleep(args.sleep)
-                continue
-            if raw:
-                _save_raw(ds, raw)
+        # 2) raw取得→中間表現→upsert（キャッシュ優先、無ければAPI）
+        try:
+            inter, source, client = ingest_date(
+                conn, ds, client=client, sleep=args.sleep
+            )
+        except Exception as e:
+            print(f"  {ds}: 取得エラー（スキップ）: {e}")
+            date -= dt.timedelta(days=1)
             time.sleep(args.sleep)
+            continue
 
-        # 3) 中間表現へ変換
-        inter = intermediate.build_intermediate(raw) if raw else None
         if not inter:
             empty += 1
             empty_streak += 1
             date -= dt.timedelta(days=1)
             continue
 
-        database.upsert_night(conn, inter)
         added += 1
         empty_streak = 0
         score = (inter.get("features") or {}).get("sleep_score")
-        tag = "cache" if from_cache else "api"
-        print(f"  {ds}: 追加 (score={score}, {len(inter.get('timeline') or [])}行, {tag})")
+        print(f"  {ds}: 追加 (score={score}, {len(inter.get('timeline') or [])}行, {source})")
         date -= dt.timedelta(days=1)
 
     reason = "開始日に到達" if date < floor else f"データ無し{args.max_empty}日連続"

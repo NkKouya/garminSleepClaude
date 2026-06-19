@@ -1,20 +1,23 @@
-"""raw データを使った詳細睡眠分析モード（無料・サブスク）。
+"""DB の中間表現を使った詳細睡眠分析モード（無料・サブスク）。
 
-raw（get_sleep_data 生レスポンス）→ 中間表現（特徴量＋5分粒度タイムライン）→
+SQLite(sleep.db) の中間表現（特徴量＋5分粒度タイムライン）を参照 →
 Claude Code CLI で時系列分析 → ファイル保存（＋任意でメール送信）。
+
+参照源は DB 優先。過去日は DB から読むため再ダウンロード不要。DB に無い日は
+その日だけ取り込み（build_database.ingest_date）、今日分は常に再取得して
+DB を最新化してから解析する。
 
 集計値だけの簡易レポートとは別系統で、夜間の経過に踏み込んだ
 詳細レポートを生成する（無料・サブスクのメインモード）。
 
 使い方:
-    python detailed_report.py            # 今日分（HTMLメール送信あり）
-    python detailed_report.py 2026-06-14 # 日付指定（HTMLメール送信あり）
+    python detailed_report.py            # 今日分（再取得して最新化、HTMLメール送信あり）
+    python detailed_report.py 2026-06-14 # 日付指定（DB参照、無ければ取込）
     python detailed_report.py 2026-06-14 --no-mail  # 送信せずファイル保存のみ
 """
 from __future__ import annotations
 
 import datetime as dt
-import json
 import os
 import sys
 
@@ -68,24 +71,30 @@ def build_html_body(inter: dict, analysis: str) -> str:
 
 
 def run(date: str, send_mail: bool) -> int:
-    from garmin_client import get_sleep_raw
-    from intermediate import build_intermediate
+    import database
+    import build_database
     from analyzer import analyze_free_detailed
 
     print(f"詳細睡眠レポート処理を開始: {date}")
-    raw = get_sleep_raw(date)
-    inter = build_intermediate(raw)
+    conn = database.connect()
+    database.init_schema(conn)
+
+    if date == dt.date.today().isoformat():
+        # 今日分: Garmin 側が日中更新され得るため常に再取得してDBを最新化
+        inter, _, _ = build_database.ingest_date(conn, date, use_cache=False)
+        if not inter:
+            inter = database.load_intermediate(conn, date)  # 未同期なら既存DBにフォールバック
+    else:
+        # 過去日: DB優先。無ければその日だけ取り込む（フル遡及はしない）
+        inter = database.load_intermediate(conn, date)
+        if inter is None:
+            inter, _, _ = build_database.ingest_date(conn, date)
+
     if not inter:
         print(f"{date} の睡眠データが取得できませんでした（未同期の可能性）。")
         return 0
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    # 中間表現を保存（中身確認・デバッグ用）
-    inter_path = os.path.join(OUTPUT_DIR, f"sleep_intermediate_{date}.json")
-    with open(inter_path, "w", encoding="utf-8") as f:
-        json.dump(inter, f, ensure_ascii=False, indent=2)
-    print(f"中間表現を保存: {inter_path}")
 
     score = (inter.get("features") or {}).get("sleep_score")
     print(f"中間表現を生成（スコア={score}）。Claude Code で時系列分析します。")
@@ -109,6 +118,14 @@ def run(date: str, send_mail: bool) -> int:
 
 
 def main() -> int:
+    # Windows で stdout がリダイレクト/非コンソールだと cp932 になり、
+    # 日本語や em dash 等の出力で UnicodeEncodeError → 異常終了する。UTF-8 に固定する。
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     args = [a for a in sys.argv[1:]]
     send_mail = "--no-mail" not in args
     args = [a for a in args if a not in ("--mail", "--no-mail")]

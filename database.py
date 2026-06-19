@@ -167,6 +167,92 @@ def flatten_features(inter: dict) -> dict:
     }
 
 
+def load_intermediate(conn: sqlite3.Connection, date: str) -> Optional[dict]:
+    """DB（nights 1行 + timeline 該当日）から中間表現(inter)を復元する。
+
+    flatten_features の逆変換。intermediate.build_intermediate と同じネスト構造
+    （{date, features:{...}, timeline:[...]}）を返す。該当日が無ければ None。
+    """
+    night = conn.execute("SELECT * FROM nights WHERE date = ?", (date,)).fetchone()
+    if night is None:
+        return None
+
+    def _loads(value):
+        try:
+            return json.loads(value) if value else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    features = {
+        "sleep_score": night["sleep_score"],
+        "sleep_quality": night["sleep_quality"],
+        "bed_time": night["bed_time"],
+        "wake_time": night["wake_time"],
+        "stages": {
+            "deep_min": night["deep_min"],
+            "light_min": night["light_min"],
+            "rem_min": night["rem_min"],
+            "awake_min": night["awake_min"],
+            "cycles": night["cycles"],
+        },
+        "awakenings": {
+            "count": night["awakenings_count"],
+            "times": _loads(night["awakenings_times"]),
+        },
+        "hr": {
+            "onset": night["hr_onset"],
+            "nadir": night["hr_nadir"],
+            "nadir_time": night["hr_nadir_time"],
+            "resting": night["hr_resting"],
+        },
+        "hrv": {
+            "start": night["hrv_start"],
+            "end": night["hrv_end"],
+            "trend": night["hrv_trend"],
+            "avg_overnight": night["hrv_avg_overnight"],
+            "status": night["hrv_status"],
+        },
+        "spo2": {
+            "avg": night["spo2_avg"],
+            "lowest": night["spo2_lowest"],
+            "desaturation": {
+                "count": night["spo2_desat_count"],
+                "total_min": night["spo2_desat_total_min"],
+                "lowest": night["spo2_desat_lowest"],
+                "events": _loads(night["spo2_desat_events"]),
+            },
+        },
+        "respiration": {
+            "avg": night["resp_avg"],
+            "high": night["resp_high"],
+            "low": night["resp_low"],
+            "disruptions": night["resp_disruptions"],
+        },
+        "recovery": {
+            "body_battery_start": night["bb_start"],
+            "body_battery_end": night["bb_end"],
+            "body_battery_change": night["bb_change"],
+            "avg_stress": night["avg_stress"],
+            "restless_moments": night["restless_moments"],
+        },
+    }
+
+    tl_rows = conn.execute(
+        "SELECT t, stage, hr, hrv, spo2, resp, stress, bb "
+        "FROM timeline WHERE date = ? ORDER BY bin_index",
+        (date,),
+    ).fetchall()
+    timeline = [
+        {
+            "t": r["t"], "stage": r["stage"], "hr": r["hr"], "hrv": r["hrv"],
+            "spo2": r["spo2"], "resp": r["resp"], "stress": r["stress"], "bb": r["bb"],
+        }
+        for r in tl_rows
+    ]
+
+    return {"date": night["date"], "features": features, "timeline": timeline}
+
+
 def upsert_night(conn: sqlite3.Connection, inter: dict) -> None:
     """nights 1行 ＋ timeline の該当日を冪等に格納する（既存は置換）。"""
     date = inter.get("date")
