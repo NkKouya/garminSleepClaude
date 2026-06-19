@@ -219,11 +219,12 @@ def format_weekly(weekly: dict) -> str:
         f"{_fmt(weekly.get('stress_avg'))} / 中途覚醒 平均 {_fmt(weekly.get('awakenings_avg'))} 回",
         "",
         "【夜別 × 黄金90分】",
-        "日付         score 深  REM 黄金90分の深睡眠(分)",
+        "日付         score 就床  起床  深  REM 黄金90分の深睡眠(分)",
     ]
     for n in weekly.get("nights") or []:
         lines.append(
             f"{_fmt(n.get('date')):10} {_fmt(n.get('score')):5} "
+            f"{_fmt(n.get('bed')):5} {_fmt(n.get('wake')):5} "
             f"{_fmt(n.get('deep_min')):3} {_fmt(n.get('rem_min')):3} "
             f"{_fmt(n.get('golden90_deep_min')):>4}"
         )

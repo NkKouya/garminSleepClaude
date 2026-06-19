@@ -145,6 +145,8 @@ def build_weekly(inters: list[dict]) -> dict:
             {
                 "date": n["date"],
                 "score": n["score"],
+                "bed": n["_bed"],
+                "wake": n["_wake"],
                 "deep_min": n["deep_min"],
                 "rem_min": n["rem_min"],
                 "golden90_deep_min": n["golden90_deep_min"],
