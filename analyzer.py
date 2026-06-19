@@ -1,8 +1,10 @@
 """睡眠データを分析・評価し、日本語のレポート文を生成する。
 
-2系統の分析:
-- analyze_free_detailed(): Claude Code CLI(`claude -p`)で時系列を分析（無料・サブスク）。
-- analyze():               Claude API を使う（有料・従量課金）。
+中間表現（特徴量＋5分粒度タイムライン）を黄金90分フレームで分析する。
+分析エンジンは2系統で、プロンプト・入力データは共通:
+- analyze_free_detailed():  Claude Code CLI(`claude -p`)で分析（無料・サブスク）。
+- analyze_detailed_api():   Claude API を使う（有料・従量課金）。
+- analyze_free_weekly():    直近1週間の週次集計を CLI で分析。
 """
 from __future__ import annotations
 
@@ -12,32 +14,6 @@ import subprocess
 import anthropic
 
 import config
-
-_LABELS = {
-    "sleep_score": "睡眠スコア",
-    "sleep_quality": "睡眠の質判定",
-    "total_sleep": "総睡眠時間",
-    "deep_sleep": "深い睡眠",
-    "light_sleep": "浅い睡眠",
-    "rem_sleep": "REM睡眠",
-    "awake": "覚醒",
-    "bed_time": "就寝時刻",
-    "wake_time": "起床時刻",
-    "resting_hr": "安静時心拍数(bpm)",
-    "avg_hrv": "平均HRV(ms)",
-    "avg_respiration": "平均呼吸数(回/分)",
-    "avg_spo2": "平均SpO2(%)",
-    "avg_stress": "睡眠中の平均ストレス",
-}
-
-_SYSTEM_PROMPT = (
-    "あなたは睡眠の専門家です。提示されたGarminの睡眠指標をもとに、"
-    "前夜の睡眠を評価し、利用者が朝に読んで役立つ簡潔な日本語レポートを書いてください。"
-    "構成は次の3つの見出しで: 「① 総評」「② 良かった点・気になる点」"
-    "「③ 今日へのアドバイス」。"
-    "専門用語には軽い補足を添え、断定しすぎず、前向きで実行しやすい助言にしてください。"
-    "全体で400〜600字程度。"
-)
 
 
 _DETAILED_SYSTEM_PROMPT = (
@@ -101,6 +77,10 @@ _WEEKLY_SYSTEM_PROMPT = (
     "- 就寝・起床時刻の『ばらつき（標準偏差）』は睡眠リズムの一貫性の指標。"
     "ばらつきが大きいほど体内時計が乱れやすく、黄金の90分の再現性を下げやすい。\n"
     "- 「何時に寝たか」自体より、入眠後最初の90分の質と、その週内での安定性を見る。\n"
+    "- 夜別表で『欠損（不眠とみなす）』と記された日は、機器の同期漏れではなく"
+    "**その夜は不眠（ほとんど眠れなかった）**として扱うこと。睡眠リズムの一貫性・"
+    "回復・総睡眠の観点で明確なマイナス要因とみなし、週評価に反映する"
+    "（ただし週平均の数値自体は記録のある夜のみで算出されている点に留意）。\n"
     "\n"
     "# 解析手順\n"
     "1. 週平均の主要指標（睡眠スコア・各睡眠段階・総睡眠時間・黄金90分の深睡眠量・HRV・"
@@ -199,9 +179,15 @@ def format_weekly(weekly: dict) -> str:
     bt = weekly.get("bed_time") or {}
     wt = weekly.get("wake_time") or {}
 
-    lines = [
+    missing_days = weekly.get("missing_days") or 0
+    period = (
         f"対象期間: {weekly.get('start_date')} 〜 {weekly.get('end_date')}"
-        f"（データのある夜: {_fmt(weekly.get('days'))} 日）",
+        f"（データのある夜: {_fmt(weekly.get('days'))} 日"
+    )
+    period += f" / 欠損 {missing_days} 日（不眠とみなす））" if missing_days else "）"
+
+    lines = [
+        period,
         "",
         "【週次集計（平均）】",
         f"- 睡眠スコア: 平均 {_fmt(sc.get('avg'))} "
@@ -222,6 +208,9 @@ def format_weekly(weekly: dict) -> str:
         "日付         score 就床  起床  深  REM 黄金90分の深睡眠(分)",
     ]
     for n in weekly.get("nights") or []:
+        if n.get("missing"):
+            lines.append(f"{_fmt(n.get('date')):10} 欠損（不眠とみなす）")
+            continue
         lines.append(
             f"{_fmt(n.get('date')):10} {_fmt(n.get('score')):5} "
             f"{_fmt(n.get('bed')):5} {_fmt(n.get('wake')):5} "
@@ -241,16 +230,6 @@ def analyze_free_weekly(weekly: dict) -> str:
         f"{body}"
     )
     return _run_claude_cli(prompt)
-
-
-def format_metrics(summary: dict) -> str:
-    """睡眠指標を読みやすい箇条書きテキストに整形する。"""
-    lines = []
-    for key, label in _LABELS.items():
-        value = summary.get(key)
-        if value is not None:
-            lines.append(f"- {label}: {value}")
-    return "\n".join(lines)
 
 
 def _run_claude_cli(prompt: str) -> str:
@@ -282,23 +261,27 @@ def _run_claude_cli(prompt: str) -> str:
     return output
 
 
-def analyze(summary: dict) -> str:
-    """睡眠サマリを Claude API に渡し、評価レポート文（日本語）を返す（有料・自動モード）。"""
+def analyze_detailed_api(inter: dict) -> str:
+    """中間表現を Claude API で時系列分析し、詳細レポート文（日本語）を返す（有料・従量課金）。
+
+    無料モード analyze_free_detailed() と同じ _DETAILED_SYSTEM_PROMPT ＋
+    format_intermediate を使う。違いは実行エンジンが CLI ではなく API である点のみ。
+    """
     config.require_anthropic()
-    metrics_text = format_metrics(summary)
+    body = format_intermediate(inter)
     user_content = (
-        f"対象日: {summary.get('date')}\n"
-        f"以下は前夜の睡眠指標です。これを分析・評価してください。\n\n"
-        f"{metrics_text}"
+        f"以下は前夜のGarmin睡眠データ（時系列を5分粒度に圧縮したもの）です。"
+        f"これを分析・評価してください。\n\n"
+        f"{body}"
     )
 
     client = anthropic.Anthropic()
     response = client.messages.create(
         model=config.CLAUDE_MODEL,
-        max_tokens=2000,
+        max_tokens=3000,
         thinking={"type": "adaptive"},
         output_config={"effort": "medium"},
-        system=_SYSTEM_PROMPT,
+        system=_DETAILED_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_content}],
     )
 
@@ -308,10 +291,14 @@ def analyze(summary: dict) -> str:
 
 
 if __name__ == "__main__":
-    from garmin_client import get_sleep_summary
+    import datetime as dt
 
-    s = get_sleep_summary()
-    if s:
-        print(analyze(s))
+    import database
+
+    conn = database.connect()
+    database.init_schema(conn)
+    inter = database.load_intermediate(conn, dt.date.today().isoformat())
+    if inter:
+        print(analyze_detailed_api(inter))
     else:
-        print("睡眠データが取得できませんでした。")
+        print("当日の中間表現が DB にありません（先に取り込みが必要）。")
