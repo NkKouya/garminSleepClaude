@@ -1,19 +1,18 @@
 """睡眠データを分析・評価し、日本語のレポート文を生成する。
 
 中間表現（特徴量＋5分粒度タイムライン）を黄金90分フレームで分析する。
-分析エンジンは2系統で、プロンプト・入力データは共通:
-- analyze_free_detailed():  Claude Code CLI(`claude -p`)で分析（無料・サブスク）。
-- analyze_detailed_api():   Claude API を使う（有料・従量課金）。
-- analyze_free_weekly():    直近1週間の週次集計を CLI で分析。
+プロンプト・入力データは共通で、分析エンジン（LLM）は backends.py が
+config.BACKEND（claude_cli / claude_api / ollama / gemini）で差し替える。
+これにより Claude のサブスク/課金が無くても同じ分析が動く。
+
+公開関数（後方互換）:
+- analyze_free_detailed():  詳細分析。config.BACKEND に従う（既定 claude_cli）。
+- analyze_detailed_api():   詳細分析。Claude API に固定（main.py 用）。
+- analyze_free_weekly():    週次分析。config.BACKEND に従う。
 """
 from __future__ import annotations
 
-import os
-import subprocess
-
-import anthropic
-
-import config
+import backends
 
 
 _DETAILED_SYSTEM_PROMPT = (
@@ -160,16 +159,24 @@ def format_intermediate(inter: dict) -> str:
     return "\n".join(lines)
 
 
-def analyze_free_detailed(inter: dict) -> str:
-    """中間表現を Claude Code CLI で時系列分析し、詳細レポート文（日本語）を返す。"""
+def analyze_detailed(inter: dict, backend: str | None = None) -> str:
+    """中間表現を時系列分析し、詳細レポート文（日本語）を返す。
+
+    分析エンジンは config.BACKEND（claude_cli/claude_api/ollama/gemini）。
+    backend を明示するとそれを優先する。
+    """
     body = format_intermediate(inter)
-    prompt = (
-        f"{_DETAILED_SYSTEM_PROMPT}\n\n"
-        f"以下は前夜のGarmin睡眠データ（時系列を5分粒度に圧縮したもの）です。"
-        f"これを分析・評価してください。\n\n"
+    user_content = (
+        "以下は前夜のGarmin睡眠データ（時系列を5分粒度に圧縮したもの）です。"
+        "これを分析・評価してください。\n\n"
         f"{body}"
     )
-    return _run_claude_cli(prompt)
+    return backends.run(_DETAILED_SYSTEM_PROMPT, user_content, backend=backend)
+
+
+def analyze_free_detailed(inter: dict) -> str:
+    """詳細分析（config.BACKEND に従う）。後方互換のための別名。"""
+    return analyze_detailed(inter)
 
 
 def format_weekly(weekly: dict) -> str:
@@ -220,74 +227,32 @@ def format_weekly(weekly: dict) -> str:
     return "\n".join(lines)
 
 
-def analyze_free_weekly(weekly: dict) -> str:
-    """週次集計を Claude Code CLI で分析し、週間レポート文（日本語）を返す。"""
+def analyze_weekly(weekly: dict, backend: str | None = None) -> str:
+    """週次集計を分析し、週間レポート文（日本語）を返す。
+
+    分析エンジンは config.BACKEND（backend 指定があればそれを優先）。
+    """
     body = format_weekly(weekly)
-    prompt = (
-        f"{_WEEKLY_SYSTEM_PROMPT}\n\n"
-        f"以下は直近1週間のGarmin睡眠データを集計したものです（週平均と夜別の指標）。"
-        f"これを分析・評価してください。\n\n"
+    user_content = (
+        "以下は直近1週間のGarmin睡眠データを集計したものです（週平均と夜別の指標）。"
+        "これを分析・評価してください。\n\n"
         f"{body}"
     )
-    return _run_claude_cli(prompt)
+    return backends.run(_WEEKLY_SYSTEM_PROMPT, user_content, backend=backend)
 
 
-def _run_claude_cli(prompt: str) -> str:
-    """Claude Code CLI(`claude -p`)にプロンプトを渡し、応答テキストを返す。
-
-    プロンプトは stdin 経由で渡す（複数行・特殊文字の安全性、シェル注入回避）。
-    サブスクリプションで動作するため API 従量課金は発生しない。
-    """
-    comspec = os.environ.get("COMSPEC", "cmd.exe")
-    proc = subprocess.run(
-        [comspec, "/c", config.CLAUDE_CMD, "-p"],
-        input=prompt,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=300,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"claude CLI がエラー終了しました (code={proc.returncode}):\n"
-            f"{proc.stderr.strip()}"
-        )
-    output = (proc.stdout or "").strip()
-    if not output:
-        raise RuntimeError(
-            "claude CLI から空の応答が返りました。"
-            f"\nstderr: {proc.stderr.strip()}"
-        )
-    return output
+def analyze_free_weekly(weekly: dict) -> str:
+    """週次分析（config.BACKEND に従う）。後方互換のための別名。"""
+    return analyze_weekly(weekly)
 
 
 def analyze_detailed_api(inter: dict) -> str:
-    """中間表現を Claude API で時系列分析し、詳細レポート文（日本語）を返す（有料・従量課金）。
+    """詳細分析を Claude API に固定して実行する（有料・従量課金。main.py 用）。
 
-    無料モード analyze_free_detailed() と同じ _DETAILED_SYSTEM_PROMPT ＋
-    format_intermediate を使う。違いは実行エンジンが CLI ではなく API である点のみ。
+    無料モードと同じ _DETAILED_SYSTEM_PROMPT ＋ format_intermediate を使い、
+    エンジンだけ Claude API に固定する。
     """
-    config.require_anthropic()
-    body = format_intermediate(inter)
-    user_content = (
-        f"以下は前夜のGarmin睡眠データ（時系列を5分粒度に圧縮したもの）です。"
-        f"これを分析・評価してください。\n\n"
-        f"{body}"
-    )
-
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=config.CLAUDE_MODEL,
-        max_tokens=3000,
-        thinking={"type": "adaptive"},
-        output_config={"effort": "medium"},
-        system=_DETAILED_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_content}],
-    )
-
-    return "".join(
-        block.text for block in response.content if block.type == "text"
-    ).strip()
+    return analyze_detailed(inter, backend="claude_api")
 
 
 if __name__ == "__main__":
@@ -299,6 +264,6 @@ if __name__ == "__main__":
     database.init_schema(conn)
     inter = database.load_intermediate(conn, dt.date.today().isoformat())
     if inter:
-        print(analyze_detailed_api(inter))
+        print(analyze_detailed(inter))
     else:
         print("当日の中間表現が DB にありません（先に取り込みが必要）。")

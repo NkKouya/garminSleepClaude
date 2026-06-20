@@ -37,6 +37,22 @@ CLAUDE_MODEL = "claude-opus-4-8"
 # claude -p（非対話）をサブスクで呼ぶ。API従量課金は発生しない。
 CLAUDE_CMD = os.getenv("CLAUDE_CMD") or r"C:\Users\mckou\AppData\Roaming\npm\claude.cmd"
 
+# --- 分析バックエンド（LLMエンジン）の選択 ---
+# claude_cli : Claude Code CLI（サブスク・無料）。既定。既存ユーザーの挙動を維持。
+# claude_api : Claude API（従量課金）。
+# ollama     : ローカルLLM（無料・データがPC外に出ない）。要 Ollama 起動＋モデル pull。
+# gemini     : Google Gemini の無料枠（無料・キーを貼るだけ）。
+# → Claude のサブスク/課金が無くても ollama / gemini で同じ分析が動く。
+BACKEND = (os.getenv("BACKEND") or "claude_cli").lower()
+
+# ollama 設定（BACKEND=ollama のとき使用）
+OLLAMA_HOST = os.getenv("OLLAMA_HOST") or "http://localhost:11434"
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:7b"
+
+# gemini 設定（BACKEND=gemini のとき使用）。キーは https://aistudio.google.com で無料発行。
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL") or "gemini-2.0-flash"
+
 # --- 任意: Gmail（メール送信を使う場合のみ）---
 GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")

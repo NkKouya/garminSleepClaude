@@ -48,6 +48,25 @@ pip install -r requirements.txt
 | `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` | メール送信時 | Gmail送信用（アプリパスワード）。`--no-mail` 実行時は不要 |
 | `ANTHROPIC_API_KEY` | 有料モードのみ | https://console.anthropic.com で発行（従量課金） |
 
+### 分析エンジンの選択（Claude のサブスク/課金が無くても使える）
+
+`.env` の `BACKEND` で分析エンジンを切り替えられます。**Claude を持っていなくても、無料の
+`ollama` / `gemini` で同じ分析（同一プロンプト・同一データ）が動きます。**
+
+| `BACKEND` | 対象 | 費用 | データ送信先 | 準備 |
+|------|------|------|------|------|
+| `claude_cli`（既定） | Claude Code サブスク保有 | 無料(サブスク) | Anthropic | `claude` にログイン済み |
+| **`ollama`（無料の本命）** | 非課金・プライバシー重視 | 無料 | **PC内（外に出ない）** | Ollama を起動し `ollama pull qwen2.5:7b` |
+| `gemini` | 非課金・手軽さ重視 | 無料枠 | Google | `GEMINI_API_KEY` を https://aistudio.google.com で発行し記入 |
+| `claude_api` | API課金OK | 従量 | Anthropic | `ANTHROPIC_API_KEY` を記入 |
+
+**無料で確実に使うなら `ollama` を推奨します。** Gemini の無料枠は Google アカウント/地域に
+よって付与されない（HTTP 429 / `limit: 0`）ことがあり、その場合は待っても回復しません。
+`gemini` で 429 が出たら `GEMINI_MODEL=gemini-2.5-flash` を試すか、`BACKEND=ollama` に切り替えてください。
+
+※ ローカルの小型モデル（`ollama`）は Claude より分析が浅くなる傾向があります。
+「無料・データがPC外に出ない」価値と引き換えである点に留意してください。
+
 ### 3. 初回手動実行（Garminログイン & トークン生成）
 ```powershell
 python fetch_rawdata.py
