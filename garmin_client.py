@@ -7,15 +7,24 @@ from __future__ import annotations
 
 import datetime as dt
 import os
-from typing import Optional
+from typing import Callable, Optional
 
 from garminconnect import Garmin
 
 import config
 
 
-def _login() -> Garmin:
-    """トークン優先でログインし、Garmin クライアントを返す。"""
+def _console_mfa() -> str:
+    """コンソールから2段階認証コードを取得する（CLI 既定）。"""
+    return input("Garmin の2段階認証コードを入力してください: ").strip()
+
+
+def _login(mfa_provider: Optional[Callable[[], str]] = None) -> Garmin:
+    """トークン優先でログインし、Garmin クライアントを返す。
+
+    mfa_provider: MFAコードの取得関数。未指定ならコンソール入力（CLI互換）。
+    GUI は tkinter ダイアログを返す関数を渡す。
+    """
     # 1) トークンキャッシュから復元を試みる（無効/不在なら例外）
     try:
         garmin = Garmin()
@@ -25,6 +34,7 @@ def _login() -> Garmin:
         # 2) email/password でログインへフォールバック
         pass
 
+    config.require_garmin()
     garmin = Garmin(
         email=config.GARMIN_EMAIL,
         password=config.GARMIN_PASSWORD,
@@ -32,15 +42,22 @@ def _login() -> Garmin:
     )
     result1, result2 = garmin.login()
 
-    # 3) MFA が必要な場合（初回手動実行時のみ想定）
+    # 3) MFA が必要な場合（初回ログイン時のみ想定）
     if result1 == "needs_mfa":
-        mfa_code = input("Garmin の2段階認証コードを入力してください: ").strip()
+        provider = mfa_provider or _console_mfa
+        mfa_code = provider()
         garmin.resume_login(result2, mfa_code)
 
     # 4) トークンを保存（return_on_mfa / resume_login 経路では自動保存されない）
     os.makedirs(config.TOKEN_STORE, exist_ok=True)
     garmin.client.dump(config.TOKEN_STORE)
     return garmin
+
+
+def verify_login(mfa_provider: Optional[Callable[[], str]] = None) -> bool:
+    """ログインできるか検証する（GUIのログインテスト用）。成功で True、失敗は例外。"""
+    _login(mfa_provider=mfa_provider)
+    return True
 
 
 def _sec_to_hm(seconds: Optional[int]) -> Optional[str]:

@@ -1,69 +1,140 @@
-"""設定の集約。.env を読み込み、各値を公開する。
+"""設定の集約。settings.json と .env を読み込み、各値を公開する。
 
-Garmin の認証情報のみ必須。Claude API / Gmail は使う機能でのみ必要
-（手動 Claude Desktop モードでは不要）。
+優先順位: 環境変数(.env を load_dotenv で反映) > settings.json > 既定。
+GUI(setup_gui.py) が settings.json に書き、CLI/スケジュール実行がそれを読む。
+
+import 時には例外を投げない（設定が無くても GUI 初回起動を成立させるため）。
+値の必須チェックは require_*() を呼んだ時にのみ行う。
 """
+from __future__ import annotations
+
+import json
 import os
+import sys
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-
-def _require(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        raise RuntimeError(
-            f"環境変数 {name} が設定されていません。.env を確認してください"
-            "（.env.example をコピーして値を記入）。"
-        )
-    return value
-
-
-# --- 必須: Garmin ---
-GARMIN_EMAIL = _require("GARMIN_EMAIL")
-GARMIN_PASSWORD = _require("GARMIN_PASSWORD")
-
-# garth トークンキャッシュ
-TOKEN_STORE = os.getenv("TOKEN_STORE") or "./.garminconnect"
-
-# --- 任意: Claude API（有料・自動分析モードでのみ使用）---
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-if ANTHROPIC_API_KEY:
-    os.environ.setdefault("ANTHROPIC_API_KEY", ANTHROPIC_API_KEY)
 CLAUDE_MODEL = "claude-opus-4-8"
 
-# --- 無料・全自動モード: Claude Code CLI のパス ---
-# claude -p（非対話）をサブスクで呼ぶ。API従量課金は発生しない。
-CLAUDE_CMD = os.getenv("CLAUDE_CMD") or r"C:\Users\mckou\AppData\Roaming\npm\claude.cmd"
 
-# --- 分析バックエンド（LLMエンジン）の選択 ---
-# claude_cli : Claude Code CLI（サブスク・無料）。既定。既存ユーザーの挙動を維持。
-# claude_api : Claude API（従量課金）。
-# ollama     : ローカルLLM（無料・データがPC外に出ない）。要 Ollama 起動＋モデル pull。
-# gemini     : Google Gemini の無料枠（無料・キーを貼るだけ）。
-# → Claude のサブスク/課金が無くても ollama / gemini で同じ分析が動く。
-BACKEND = (os.getenv("BACKEND") or "claude_cli").lower()
+def _app_dir() -> str:
+    """設定ファイルを置くディレクトリ。
 
-# ollama 設定（BACKEND=ollama のとき使用）
-OLLAMA_HOST = os.getenv("OLLAMA_HOST") or "http://localhost:11434"
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:7b"
+    PyInstaller で固めた場合は exe のあるフォルダ、ソース実行時はこのファイルの場所。
+    """
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
 
-# gemini 設定（BACKEND=gemini のとき使用）。キーは https://aistudio.google.com で無料発行。
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL") or "gemini-2.0-flash"
 
-# --- 任意: Gmail（メール送信を使う場合のみ）---
-GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS")
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
-MAIL_TO = os.getenv("MAIL_TO") or GMAIL_ADDRESS
+def settings_path() -> str:
+    return os.path.join(_app_dir(), "settings.json")
+
+
+def _load_settings() -> dict:
+    try:
+        with open(settings_path(), encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+_SETTINGS: dict = _load_settings()
+
+
+def _get(name: str, default=None):
+    """環境変数 > settings.json > 既定 の順で値を返す（空文字は未設定扱い）。"""
+    val = os.environ.get(name)
+    if val:
+        return val
+    val = _SETTINGS.get(name)
+    if val not in (None, ""):
+        return val
+    return default
+
+
+def _reload() -> None:
+    """モジュール公開値を settings/env から再計算する（save_settings 後に呼ぶ）。"""
+    global GARMIN_EMAIL, GARMIN_PASSWORD, TOKEN_STORE
+    global ANTHROPIC_API_KEY, CLAUDE_CMD
+    global BACKEND, OLLAMA_HOST, OLLAMA_MODEL, GEMINI_API_KEY, GEMINI_MODEL
+    global GMAIL_ADDRESS, GMAIL_APP_PASSWORD, MAIL_TO, DELIVERY
+
+    # --- 必須: Garmin（import 時には検証しない。require_garmin() で検証）---
+    GARMIN_EMAIL = _get("GARMIN_EMAIL")
+    GARMIN_PASSWORD = _get("GARMIN_PASSWORD")
+    TOKEN_STORE = _get("TOKEN_STORE", "./.garminconnect")
+
+    # --- Claude API（有料・自動分析モード）---
+    ANTHROPIC_API_KEY = _get("ANTHROPIC_API_KEY")
+    if ANTHROPIC_API_KEY:
+        os.environ.setdefault("ANTHROPIC_API_KEY", ANTHROPIC_API_KEY)
+    # 無料・全自動モードの Claude Code CLI のパス（claude -p をサブスクで呼ぶ）
+    CLAUDE_CMD = _get("CLAUDE_CMD", r"C:\Users\mckou\AppData\Roaming\npm\claude.cmd")
+
+    # --- 分析バックエンド（claude_cli / claude_api / ollama / gemini）---
+    BACKEND = str(_get("BACKEND", "claude_cli")).lower()
+    OLLAMA_HOST = _get("OLLAMA_HOST", "http://localhost:11434")
+    OLLAMA_MODEL = _get("OLLAMA_MODEL", "qwen2.5:7b")
+    GEMINI_API_KEY = _get("GEMINI_API_KEY")
+    GEMINI_MODEL = _get("GEMINI_MODEL", "gemini-2.0-flash")
+
+    # --- 配信: browser / mail / none（未設定なら effective_delivery() で決定）---
+    DELIVERY = str(_get("DELIVERY", "")).lower()
+
+    # --- Gmail（メール送信を使う場合のみ）---
+    GMAIL_ADDRESS = _get("GMAIL_ADDRESS")
+    GMAIL_APP_PASSWORD = _get("GMAIL_APP_PASSWORD")
+    MAIL_TO = _get("MAIL_TO") or GMAIL_ADDRESS
+
+
+_reload()
+
+
+def save_settings(values: dict) -> str:
+    """GUI からの設定を settings.json に保存し、モジュール値を再読込する。
+
+    値が空/None のキーは保存しない（既存値を消さないため）。既存内容にマージする。
+    戻り値は保存先パス。
+    """
+    global _SETTINGS
+    merged = dict(_SETTINGS)
+    for k, v in values.items():
+        if v is None or v == "":
+            merged.pop(k, None)
+        else:
+            merged[k] = v
+    path = settings_path()
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(merged, f, ensure_ascii=False, indent=2)
+    _SETTINGS = merged
+    _reload()
+    return path
+
+
+def effective_delivery() -> str:
+    """配信方法を決める。明示設定が無ければ Gmail 設定済→mail、無→browser。"""
+    if DELIVERY in ("browser", "mail", "none"):
+        return DELIVERY
+    return "mail" if (GMAIL_ADDRESS and GMAIL_APP_PASSWORD) else "browser"
+
+
+def require_garmin() -> None:
+    if not GARMIN_EMAIL or not GARMIN_PASSWORD:
+        raise RuntimeError(
+            "GARMIN_EMAIL / GARMIN_PASSWORD が未設定です。"
+            "設定画面（setup_gui.py）または .env で設定してください。"
+        )
 
 
 def require_anthropic() -> None:
     if not ANTHROPIC_API_KEY:
         raise RuntimeError(
             "ANTHROPIC_API_KEY が未設定です（有料・自動分析モードに必要）。"
-            "無料で使う場合は detailed_report.py（無料・詳細モード）を利用してください。"
+            "無料で使う場合は BACKEND=ollama / gemini / claude_cli を利用してください。"
         )
 
 

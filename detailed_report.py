@@ -107,13 +107,20 @@ def run(date: str, send_mail: bool) -> int:
     print(f"レポートを保存: {out_path}\n")
     print(body)
 
-    if send_mail:
-        from emailer import send_report
+    # 配信: --no-mail は「保存のみ(none)」、それ以外は設定(config)に従う
+    # （Gmail設定済→mail、未設定→browserでHTMLを開く）。
+    from notify import deliver
 
-        score_part = f"（スコア {score}）" if score is not None else ""
-        html = build_html_body(inter, analysis)
-        send_report(f"【睡眠 詳細レポート】{date}{score_part}", body, html_body=html)
+    score_part = f"（スコア {score}）" if score is not None else ""
+    html = build_html_body(inter, analysis)
+    delivery = "none" if not send_mail else None
+    result = deliver(f"【睡眠 詳細レポート】{date}{score_part}", body, html, date, delivery)
+    if result == "mail":
         print("メール送信完了。")
+    elif result == "none":
+        print("（保存のみ。配信は行いません）")
+    else:
+        print(f"ブラウザで開きました: {result}")
     return 0
 
 

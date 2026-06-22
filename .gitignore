@@ -1,4 +1,5 @@
-.env
+*.env
+settings.json
 .garminconnect/
 logs/
 output/
