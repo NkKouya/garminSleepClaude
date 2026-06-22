@@ -50,11 +50,14 @@ class App:
             "GMAIL_ADDRESS": tk.StringVar(value=config.GMAIL_ADDRESS or ""),
             "GMAIL_APP_PASSWORD": tk.StringVar(value=config.GMAIL_APP_PASSWORD or ""),
             "MAIL_TO": tk.StringVar(value=config.MAIL_TO or ""),
+            "SCHEDULE_TIME": tk.StringVar(value=config.SCHEDULE_TIME or "08:00"),
+            "NOTIFY_TOAST": tk.StringVar(value="1" if config.NOTIFY_TOAST else "0"),
         }
 
         self._build()
         self._toggle_backend()
         self._toggle_delivery()
+        self._refresh_schedule_status()
 
     # ---- レイアウト ----
     def _build(self) -> None:
@@ -110,6 +113,29 @@ class App:
         self._row(self.mail_frame, "送信先(任意)", self.v["MAIL_TO"], 2)
         self.mail_frame.grid(row=len(DELIVERY_LABELS), column=0, columnspan=2, sticky="ew")
         self.mail_frame.grid_remove()
+
+        # 毎朝の自動実行
+        s = ttk.LabelFrame(main, text="4. 毎朝の自動実行（任意）", padding=8)
+        s.pack(fill="x", **pad)
+        ttk.Label(s, text="実行時刻 (HH:MM)", width=18).grid(row=0, column=0, sticky="w", pady=2)
+        ttk.Entry(s, textvariable=self.v["SCHEDULE_TIME"], width=10).grid(
+            row=0, column=1, sticky="w", pady=2)
+        ttk.Checkbutton(
+            s, text="完了をデスクトップ通知（トースト）で知らせる",
+            variable=self.v["NOTIFY_TOAST"], onvalue="1", offvalue="0",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=2)
+        sbtns = ttk.Frame(s)
+        sbtns.grid(row=2, column=0, columnspan=2, sticky="w", pady=4)
+        ttk.Button(sbtns, text="毎朝自動実行を登録", command=self.on_schedule_register).pack(side="left", padx=4)
+        ttk.Button(sbtns, text="自動実行を解除", command=self.on_schedule_unregister).pack(side="left", padx=4)
+        self.sched_status = ttk.Label(s, text="", foreground="#555")
+        self.sched_status.grid(row=3, column=0, columnspan=2, sticky="w")
+        ttk.Label(
+            s,
+            text="※ スリープ中も動かすには Windows の電源設定で"
+                 "「スリープ解除タイマーの許可」を有効にしてください。",
+            foreground="#888", wraplength=620, justify="left",
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=2)
 
         # ボタン
         btns = ttk.Frame(main)
@@ -265,6 +291,48 @@ class App:
                 self._set_status("まだ結果がありません。『今すぐ実行』してください。", ok=False)
         except Exception as e:
             self._set_status(f"結果を開けませんでした: {e}", ok=False)
+
+    def _refresh_schedule_status(self) -> None:
+        def work():
+            try:
+                import scheduler
+                text = scheduler.status_text()
+            except Exception as e:  # noqa: BLE001
+                text = f"自動実行: 状態取得に失敗 ({e})"
+            self.root.after(0, lambda: self.sched_status.config(text=text))
+        self._run_bg(work)
+
+    def on_schedule_register(self) -> None:
+        self._set_status("自動実行を登録しています…")
+
+        def work():
+            try:
+                self._save_settings()
+                import scheduler
+                time_str = self.v["SCHEDULE_TIME"].get().strip() or "08:00"
+                msg = scheduler.register(time_str)
+                self._set_status(msg)
+                self._append_log(msg)
+            except Exception as e:
+                self._set_status("自動実行の登録に失敗", ok=False)
+                self._append_log(f"自動実行の登録失敗: {e}")
+            finally:
+                self._refresh_schedule_status()
+        self._run_bg(work)
+
+    def on_schedule_unregister(self) -> None:
+        def work():
+            try:
+                import scheduler
+                msg = scheduler.unregister()
+                self._set_status(msg)
+                self._append_log(msg)
+            except Exception as e:
+                self._set_status("自動実行の解除に失敗", ok=False)
+                self._append_log(f"自動実行の解除失敗: {e}")
+            finally:
+                self._refresh_schedule_status()
+        self._run_bg(work)
 
 
 def main() -> int:

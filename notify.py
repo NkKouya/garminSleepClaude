@@ -27,6 +27,25 @@ def _save_html(html_body: str, date: str) -> str:
     return html_path
 
 
+def _toast(title: str, msg: str, launch_url: str) -> None:
+    """Windows トースト通知（winotify）。未導入/失敗時は黙ってスキップ。
+
+    クリックすると launch_url（保存HTMLの file URL）を既定ブラウザで開く。
+    """
+    try:
+        from winotify import Notification
+
+        toast = Notification(
+            app_id="Garmin Sleep Reporter",
+            title=title,
+            msg=msg,
+            launch=launch_url,
+        )
+        toast.show()
+    except Exception:
+        pass  # winotify 未導入や非対応環境でも本処理は継続
+
+
 def deliver(
     subject: str,
     body: str,
@@ -37,25 +56,35 @@ def deliver(
     """設定された方法でレポートを配信する。戻り値は実施内容（パス or "mail"/"none"）。
 
     delivery: "browser" / "mail" / "none"。None なら config.effective_delivery()。
+    HTML は全モードで output/ に保存する（トーストや「前回の結果」から開けるように）。
     """
     mode = (delivery or config.effective_delivery()).lower()
+    # どのモードでもローカルにHTMLを残す（トースト/再表示の起点にする）。
+    html_path = _save_html(html_body or body, date)
+
+    if mode == "browser":
+        try:
+            webbrowser.open(_file_url(html_path))
+        except Exception:
+            pass  # ブラウザを開けなくても保存はできている
+        return html_path
 
     if mode == "mail":
         from emailer import send_report
 
         send_report(subject, body, html_body=html_body)
-        return "mail"
+        result = "mail"
+    else:  # none
+        result = "none"
 
-    if mode == "none":
-        return "none"
-
-    # browser（既定）: HTMLを保存して既定ブラウザで開く
-    html_path = _save_html(html_body or body, date)
-    try:
-        webbrowser.open(_file_url(html_path))
-    except Exception:
-        pass  # ブラウザを開けなくても保存はできている
-    return html_path
+    # browser 以外は（自動でブラウザが開かないため）トーストで知らせる。
+    if getattr(config, "NOTIFY_TOAST", True):
+        _toast(
+            "睡眠 詳細レポートが届きました",
+            "クリックで表示します。",
+            _file_url(html_path),
+        )
+    return result
 
 
 def open_latest() -> str | None:

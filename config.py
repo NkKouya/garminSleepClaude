@@ -56,12 +56,22 @@ def _get(name: str, default=None):
     return default
 
 
+def _as_bool(val, default: bool = False) -> bool:
+    """設定値（文字列/真偽/None）を bool に解釈する。"0"/"false"/"no" 等は偽。"""
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    return str(val).strip().lower() not in ("0", "false", "no", "off", "")
+
+
 def _reload() -> None:
     """モジュール公開値を settings/env から再計算する（save_settings 後に呼ぶ）。"""
     global GARMIN_EMAIL, GARMIN_PASSWORD, TOKEN_STORE
     global ANTHROPIC_API_KEY, CLAUDE_CMD
     global BACKEND, OLLAMA_HOST, OLLAMA_MODEL, GEMINI_API_KEY, GEMINI_MODEL
     global GMAIL_ADDRESS, GMAIL_APP_PASSWORD, MAIL_TO, DELIVERY
+    global SCHEDULE_TIME, NOTIFY_TOAST
 
     # --- 必須: Garmin（import 時には検証しない。require_garmin() で検証）---
     GARMIN_EMAIL = _get("GARMIN_EMAIL")
@@ -89,6 +99,10 @@ def _reload() -> None:
     GMAIL_ADDRESS = _get("GMAIL_ADDRESS")
     GMAIL_APP_PASSWORD = _get("GMAIL_APP_PASSWORD")
     MAIL_TO = _get("MAIL_TO") or GMAIL_ADDRESS
+
+    # --- 毎朝の自動実行・通知（Phase 3）---
+    SCHEDULE_TIME = _get("SCHEDULE_TIME", "08:00")
+    NOTIFY_TOAST = _as_bool(_get("NOTIFY_TOAST", "1"), default=True)
 
 
 _reload()

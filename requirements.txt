@@ -2,3 +2,6 @@ garminconnect
 anthropic
 python-dotenv
 markdown
+# winotify: 毎朝の自動実行完了をデスクトップ通知（トースト）するためのWindows用。
+# 未導入でも他機能は動作する（notify.py が lazy import で取り込み、失敗時はスキップ）。
+winotify; sys_platform == "win32"

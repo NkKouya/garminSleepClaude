@@ -23,6 +23,23 @@ import sys
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+LOG_DIR = os.path.join(BASE_DIR, "logs")
+
+
+def _redirect_to_logfile() -> None:
+    """無人実行（pythonw / --log）時に標準出力/エラーを logs/task.log へ向ける。
+
+    pythonw.exe では sys.stdout/stderr が None になり print で落ちるため、
+    ファイルへ差し替える。スケジューラ経由の実行結果をここで追跡できる。
+    """
+    os.makedirs(LOG_DIR, exist_ok=True)
+    log_path = os.path.join(LOG_DIR, "task.log")
+    f = open(log_path, "a", encoding="utf-8", errors="replace")
+    sys.stdout = f
+    sys.stderr = f
+    stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    f.write(f"\n===== {stamp} 自動実行開始 =====\n")
+    f.flush()
 
 
 def build_body(inter: dict, analysis: str) -> str:
@@ -125,6 +142,13 @@ def run(date: str, send_mail: bool) -> int:
 
 
 def main() -> int:
+    args = [a for a in sys.argv[1:]]
+
+    # 無人実行: --log 指定、または pythonw 起動(stdout が None)なら logs/task.log へ。
+    if "--log" in args or sys.stdout is None:
+        _redirect_to_logfile()
+    args = [a for a in args if a != "--log"]
+
     # Windows で stdout がリダイレクト/非コンソールだと cp932 になり、
     # 日本語や em dash 等の出力で UnicodeEncodeError → 異常終了する。UTF-8 に固定する。
     for stream in (sys.stdout, sys.stderr):
@@ -133,7 +157,6 @@ def main() -> int:
         except (AttributeError, ValueError):
             pass
 
-    args = [a for a in sys.argv[1:]]
     send_mail = "--no-mail" not in args
     args = [a for a in args if a not in ("--mail", "--no-mail")]
 
