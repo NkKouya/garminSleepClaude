@@ -11,8 +11,7 @@ import webbrowser
 
 import config
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+OUTPUT_DIR = os.path.join(config.base_dir(), "output")
 
 
 def _file_url(path: str) -> str:

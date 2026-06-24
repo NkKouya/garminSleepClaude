@@ -14,10 +14,10 @@ import json
 import os
 import sys
 
+import config
 from garmin_client import get_sleep_raw
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-RAW_DIR = os.path.join(BASE_DIR, "rawdata")
+RAW_DIR = os.path.join(config.base_dir(), "rawdata")
 
 
 def main() -> int:

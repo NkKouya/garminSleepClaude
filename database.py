@@ -14,8 +14,10 @@ import os
 import sqlite3
 from typing import Optional
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_DB = os.path.join(BASE_DIR, "sleep.db")
+import config
+
+# frozen(exe) 時は exe フォルダ、ソース時はリポジトリ（= 従来と同一パス）。
+DEFAULT_DB = os.path.join(config.base_dir(), "sleep.db")
 
 _NIGHTS_COLUMNS = [
     "date", "sleep_score", "sleep_quality", "bed_time", "wake_time",

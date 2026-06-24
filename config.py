@@ -29,6 +29,23 @@ def _app_dir() -> str:
     return os.path.dirname(os.path.abspath(__file__))
 
 
+def base_dir() -> str:
+    """書き込み可能なデータ基準ディレクトリ。
+
+    frozen(PyInstaller) では exe のあるフォルダ（ユーザー領域にインストールする前提で
+    書込可能）、ソース実行ではこのリポジトリ。settings.json・sleep.db・output・logs・
+    .garminconnect・rawdata はすべてここを基準にする。
+    ※ frozen 時に各モジュールの __file__ を使うと PyInstaller 展開先（書込不可/一時）を
+      指してしまうため、必ずこの関数を経由する。
+    """
+    return _app_dir()
+
+
+def data_path(*parts: str) -> str:
+    """base_dir() 配下のパスを組み立てる（存在保証はしない）。"""
+    return os.path.join(base_dir(), *parts)
+
+
 def settings_path() -> str:
     return os.path.join(_app_dir(), "settings.json")
 
@@ -76,7 +93,7 @@ def _reload() -> None:
     # --- 必須: Garmin（import 時には検証しない。require_garmin() で検証）---
     GARMIN_EMAIL = _get("GARMIN_EMAIL")
     GARMIN_PASSWORD = _get("GARMIN_PASSWORD")
-    TOKEN_STORE = _get("TOKEN_STORE", "./.garminconnect")
+    TOKEN_STORE = _get("TOKEN_STORE", os.path.join(_app_dir(), ".garminconnect"))
 
     # --- Claude API（有料・自動分析モード）---
     ANTHROPIC_API_KEY = _get("ANTHROPIC_API_KEY")

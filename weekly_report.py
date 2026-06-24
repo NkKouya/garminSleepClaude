@@ -19,8 +19,9 @@ import datetime as dt
 import os
 import sys
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+import config
+
+OUTPUT_DIR = os.path.join(config.base_dir(), "output")
 
 
 def build_body(weekly: dict, analysis: str) -> str:

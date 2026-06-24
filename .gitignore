@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 *.ipynb
 plot_sleep_times.py
+build/
+dist/
+Output/

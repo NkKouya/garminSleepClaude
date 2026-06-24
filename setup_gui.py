@@ -259,10 +259,14 @@ class App:
         def work():
             try:
                 self._save_settings()
-                script = os.path.join(BASE_DIR, "detailed_report.py")
+                # frozen(exe): 自身を --run で。ソース: python detailed_report.py。
+                if getattr(sys, "frozen", False):
+                    cmd = [sys.executable, "--run"]
+                else:
+                    cmd = [sys.executable, os.path.join(BASE_DIR, "detailed_report.py")]
                 proc = subprocess.Popen(
-                    [sys.executable, script],
-                    cwd=BASE_DIR,
+                    cmd,
+                    cwd=config.base_dir(),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,

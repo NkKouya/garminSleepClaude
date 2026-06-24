@@ -21,9 +21,12 @@ import datetime as dt
 import os
 import sys
 
+import config
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-OUTPUT_DIR = os.path.join(BASE_DIR, "output")
-LOG_DIR = os.path.join(BASE_DIR, "logs")
+# 書込先は config.base_dir()（frozen=exeフォルダ / ソース=リポジトリ）に統一。
+OUTPUT_DIR = os.path.join(config.base_dir(), "output")
+LOG_DIR = os.path.join(config.base_dir(), "logs")
 
 
 def _redirect_to_logfile() -> None:

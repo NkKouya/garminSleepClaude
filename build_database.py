@@ -22,11 +22,11 @@ import os
 import sys
 import time
 
+import config
 import database
 import intermediate
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-RAW_DIR = os.path.join(BASE_DIR, "rawdata")
+RAW_DIR = os.path.join(config.base_dir(), "rawdata")
 
 # 安全装置: これ以上は遡らない（今日からの最大日数）
 HARD_FLOOR_DAYS = 3650

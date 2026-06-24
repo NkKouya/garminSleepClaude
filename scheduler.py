@@ -21,8 +21,11 @@ import subprocess
 import sys
 import tempfile
 
+import config
+
 TASK_NAME = "GarminSleepReporter"
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# frozen 時は exe フォルダ、ソース時はリポジトリ（scheduler.py の場所と一致）。
+BASE_DIR = config.base_dir()
 
 # schtasks の出力は日本語環境で cp932。デコードに使う。
 _CONSOLE_ENC = "cp932" if sys.platform == "win32" else "utf-8"

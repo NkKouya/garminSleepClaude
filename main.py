@@ -11,7 +11,9 @@ import os
 import sys
 import traceback
 
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+import config
+
+LOG_DIR = os.path.join(config.base_dir(), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 logging.basicConfig(
