@@ -40,7 +40,17 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["anthropic"],
+    # アプリは tkinter＋標準ライブラリ＋garminconnect＋markdown＋winotify のみで動く。
+    # conda 環境にある重量級パッケージ（GUI/数値/解析系）が依存解析で巻き込まれて
+    # 760MB 級に肥大化していたため除外する（実行時の import グラフには現れない）。
+    # anthropic も配布版(無料系)では不要なため除外。
+    excludes=[
+        "anthropic",
+        "matplotlib", "PyQt6", "PyQt5", "PySide6", "PySide2",
+        "numpy", "pandas", "scipy", "numexpr", "bottleneck",
+        "IPython", "jupyter", "notebook", "nbconvert", "ipykernel",
+        "PIL", "sphinx", "pytest",
+    ],
     noarchive=False,
 )
 
