@@ -20,7 +20,7 @@
 #define AppPublisher "Garmin Sleep Reporter"
 
 [Setup]
-AppId={{8B5C9E2A-3F4D-4A1B-9C6E-0A1B2C3D4E5F}}
+AppId={{DE605CC6-C818-4F3B-BA5A-9CFFC9796823}}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
